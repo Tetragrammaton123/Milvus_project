@@ -4,13 +4,15 @@ from src.agents.search_agent import SearchAgent
 from src.agents.combinator_agent import CombinatorAgent
 from src.agents.chat_agent import ChatAgent
 from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
+import os
 
 def main():
     collection, embedding_model = build_milvus_index()
+    load_dotenv()
 
-    API_KEY = "RD_os_intent_classifier:Roman_Golubev:5a4fa32142e54a4db89018c03ac3cad3"
-    BASE_URL = "http://31.56.222.86:8002/api/providers/openai/v1"
-
+    API_KEY = os.getenv("API_KEY")
+    BASE_URL = os.getenv("BASE_URL")
     llm = OpenAILLM(api_key=API_KEY, base_url=BASE_URL, model="gpt-4o-mini")
 
     search_agent = SearchAgent(name="search_agent", role="retriever", llm=llm, embedding_model=embedding_model, collection=collection)

@@ -2,7 +2,18 @@ import re
 from typing import Any, Type, TypeVar, Optional
 from pydantic import BaseModel
 from openai import OpenAI
+from pydantic import BaseModel, Field
 
+class SearchToolParams(BaseModel):
+    reasoning: str = Field(description="Preliminary speculations on how to generate proper search query")
+    query: str = Field(description="Search query to address to search agent with")
+    limit: int = Field(default=5, description="Number of search results to return")
+
+class CombinatorToolParams(BaseModel):
+    reasoning: str = Field(description="Preliminary speculations on how to expand a concept into multiple queries")
+    concept: str = Field(description="The concept for which to generate diverse search queries")
+    n: int = Field(default=3, description="Number of queries to generate")
+    
 T = TypeVar("T", bound=BaseModel)
 JSON_EXTRACT_RE = re.compile(r"(\{[\s\S]*\}|\[[\s\S]*\])", re.DOTALL)
 

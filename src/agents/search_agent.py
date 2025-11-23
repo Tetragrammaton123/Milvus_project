@@ -1,5 +1,5 @@
 from typing import List, Dict
-from .base import BaseAgent
+from .base import BaseAgent, SearchToolParams, CombinatorToolParams
 from pydantic import BaseModel
 from typing import Any
 
