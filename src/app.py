@@ -58,8 +58,9 @@ async def start():
     chat_agent.add_tool("search", search_agent.search)
     chat_agent.add_tool("generate_queries", combinator_agent.generate_queries)
     
-    # Store agents in user session
+    # Store agents and initialize conversation history in user session
     cl.user_session.set("chat_agent", chat_agent)
+    cl.user_session.set("conversation_history", [])
     
     logger.success("All agents initialized successfully")
     
@@ -73,21 +74,30 @@ async def main(message: cl.Message):
     """Handle incoming messages from the user."""
     logger.info(f"Received message: {message.content}")
     
-    # Get the chat agent from user session
+    # Get the chat agent and conversation history from user session
     chat_agent = cl.user_session.get("chat_agent")
+    conversation_history = cl.user_session.get("conversation_history", [])
     
     # Show thinking message
     thinking_msg = cl.Message(content="🤔 Processing your query...")
     await thinking_msg.send()
     
     try:
-        # Get result from chat agent
-        result = chat_agent.act(message.content)
+        # Get result from chat agent with conversation history
+        result = chat_agent.act(message.content, conversation_history=conversation_history)
         
         # Handle out-of-scope queries
         if result.get("intent") == "out-of-scope":
-            thinking_msg.content = "❌ " + result.get("message", "Your query is out of scope of my abilities.")
+            response_text = "❌ " + result.get("message", "Your query is out of scope of my abilities.")
+            thinking_msg.content = response_text
             await thinking_msg.update()
+            
+            # Update conversation history
+            conversation_history.append({
+                "user": message.content,
+                "assistant": response_text
+            })
+            cl.user_session.set("conversation_history", conversation_history)
             return
         
         # Display search results
@@ -119,12 +129,37 @@ async def main(message: cl.Message):
             await thinking_msg.update()
             
             logger.success(f"Displayed {len(papers)} papers to user")
+            
+            # Update conversation history with search results summary
+            paper_titles = [p.get("title", "Untitled") for p in papers[:3]]  # First 3 titles
+            assistant_summary = f"Found {len(papers)} papers. Top results: " + "; ".join(paper_titles)
+            conversation_history.append({
+                "user": message.content,
+                "assistant": assistant_summary
+            })
+            cl.user_session.set("conversation_history", conversation_history)
         else:
-            thinking_msg.content = "No papers found for your query. Try rephrasing your question."
+            no_results_text = "No papers found for your query. Try rephrasing your question."
+            thinking_msg.content = no_results_text
             await thinking_msg.update()
+            
+            # Update conversation history
+            conversation_history.append({
+                "user": message.content,
+                "assistant": no_results_text
+            })
+            cl.user_session.set("conversation_history", conversation_history)
             
     except Exception as e:
         logger.exception("Error processing message")
-        thinking_msg.content = f"❌ An error occurred: {str(e)}"
+        error_text = f"❌ An error occurred: {str(e)}"
+        thinking_msg.content = error_text
         await thinking_msg.update()
+        
+        # Update conversation history even on error
+        conversation_history.append({
+            "user": message.content,
+            "assistant": error_text
+        })
+        cl.user_session.set("conversation_history", conversation_history)
 
