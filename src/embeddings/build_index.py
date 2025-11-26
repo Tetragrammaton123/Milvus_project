@@ -1,4 +1,4 @@
-from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection
+from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, utility
 from sentence_transformers import SentenceTransformer
 from datasets import load_dataset
 import pandas as pd
@@ -9,13 +9,25 @@ def build_milvus_index():
     connections.connect("default", uri="milvus.db")
     logger.success("Connected to Milvus database")
 
+    collection_name = "ml_arxiv"
+    model = SentenceTransformer("all-MiniLM-L6-v2", device=None)  # 'None' -> detect cuda/mps/cpu automatically
+
+    # Check if collection already exists
+    if utility.has_collection(collection_name):
+        logger.info(f"Collection '{collection_name}' already exists, skipping creation")
+        collection = Collection(collection_name)
+        logger.debug("Loading existing collection into memory")
+        collection.load()
+        logger.success("Existing collection loaded and ready for search")
+        return collection, model
+
+    # Collection doesn't exist, create it
     logger.info("Loading ML-ArXiv-Papers dataset")
     dataset = load_dataset("CShorten/ML-ArXiv-Papers")
     df = pd.DataFrame(dataset['train'])[['title', 'abstract']].dropna()
     df['text'] = df['title'] + '. ' + df['abstract']
     logger.success(f"Dataset loaded with {len(df)} papers")
 
-    model = SentenceTransformer("all-MiniLM-L6-v2", device=None)  # 'None' -> detect cuda/mps/cpu automatically
     logger.debug("Encoding documents into embeddings")
     embeddings = model.encode(df['text'].tolist(), convert_to_numpy=True, batch_size=64, show_progress_bar=True)
     logger.success(f"Generated embeddings with shape {embeddings.shape}")
@@ -28,8 +40,8 @@ def build_milvus_index():
         FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim),
     ]
     schema = CollectionSchema(fields, "Архив статей с эмбеддингами SBERT")
-    collection = Collection("ml_arxiv", schema)
-    logger.info("Collection 'ml_arxiv' created")
+    collection = Collection(collection_name, schema)
+    logger.info(f"Collection '{collection_name}' created")
 
     logger.info("Inserting documents into collection")
     batch_size = 1000
