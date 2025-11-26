@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "datasets>=4.4.1",
+    "loguru>=0.7.3,<0.7.4",
     "openai>=2.7.1",
     "pydantic>=2.12.4",
     "pymilvus[milvus-lite]>=2.6.3",
