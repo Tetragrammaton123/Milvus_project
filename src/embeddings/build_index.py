@@ -15,7 +15,6 @@ def build_milvus_index():
     df['text'] = df['title'] + '. ' + df['abstract']
     logger.success(f"Dataset loaded with {len(df)} papers")
 
-    logger.info("Loading sentence transformer model (all-MiniLM-L6-v2)")
     model = SentenceTransformer("all-MiniLM-L6-v2", device=None)  # 'None' -> detect cuda/mps/cpu automatically
     logger.debug("Encoding documents into embeddings")
     embeddings = model.encode(df['text'].tolist(), convert_to_numpy=True, batch_size=64, show_progress_bar=True)

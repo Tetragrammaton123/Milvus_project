@@ -1,13 +1,13 @@
-from src.embeddings.build_index import build_milvus_index
-from src.agents.base import OpenAILLM
-from src.agents.search_agent import SearchAgent
-from src.agents.combinator_agent import CombinatorAgent
-from src.agents.chat_agent import ChatAgent
-from dotenv import load_dotenv
-from loguru import logger
-import os
-
 def main():
+    from src.embeddings.build_index import build_milvus_index
+    from src.agents.base import OpenAILLM
+    from src.agents.search_agent import SearchAgent
+    from src.agents.combinator_agent import CombinatorAgent
+    from src.agents.chat_agent import ChatAgent
+    from dotenv import load_dotenv
+    from loguru import logger
+    import os
+
     logger.info("Starting application")
     
     collection, embedding_model = build_milvus_index()
@@ -36,4 +36,7 @@ def main():
     print(result)
 
 if __name__ == "__main__":
+    from src.logger import setup_logging
+
+    setup_logging()
     main()
