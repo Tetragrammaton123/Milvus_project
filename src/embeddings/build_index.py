@@ -13,7 +13,7 @@ def build_milvus_index():
     logger.info("Loading ML-ArXiv-Papers dataset")
     dataset = load_dataset("CShorten/ML-ArXiv-Papers")
     df = pd.DataFrame(dataset['train'])[['title', 'abstract']].dropna()
-    df['text'] = df['title'] + '. ' + df['abstract']
+    df['text'] = df['title'] + '\n\n' + df['abstract']
     logger.success(f"Dataset loaded with {len(df)} papers")
 
     model = SentenceTransformer("all-MiniLM-L6-v2", device=None)  # 'None' -> detect cuda/mps/cpu automatically
@@ -26,6 +26,7 @@ def build_milvus_index():
     fields = [
         FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
         FieldSchema(name="title", dtype=DataType.VARCHAR, max_length=512),
+        FieldSchema(name="abstract", dtype=DataType.VARCHAR, max_length=2048),
         FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim),
     ]
     schema = CollectionSchema(fields, "Архив статей с эмбеддингами SBERT")
@@ -35,7 +36,11 @@ def build_milvus_index():
     batch_size = 1000
     for i in tqdm(range(0, len(df), batch_size), desc="Inserting documents", unit="batch"):
         end = min(i + batch_size, len(df))
-        collection.insert([df['title'].iloc[i:end].tolist(), embeddings[i:end]])
+        collection.insert([
+            df['title'].iloc[i:end].tolist(),
+            df['abstract'].iloc[i:end].tolist(),
+            embeddings[i:end]
+        ])
 
     logger.info("Creating vector index")
     index_params = {"index_type": "IVF_FLAT", "metric_type": "COSINE", "params": {"nlist": 128}}
