@@ -1,6 +1,7 @@
 from .base import BaseAgent, SearchToolParams, CombinatorToolParams
 from pydantic import BaseModel
-from typing import Literal, Dict
+from typing import Literal
+from loguru import logger
 
 
 class IntentResponse(BaseModel):
@@ -9,6 +10,7 @@ class IntentResponse(BaseModel):
 
 class ChatAgent(BaseAgent):
     def classify_intent(self, query: str) -> IntentResponse:
+        logger.debug(f"Classifying intent for query: {query}")
         prompt = (
             "Classify the intent of the user's query in the context of academic literature search.\n\n"
             f"Query: {query}\n\n"
@@ -17,13 +19,17 @@ class ChatAgent(BaseAgent):
             "- build_set (create a set or collection of academic papers)\n"
             "- out-of-scope (query is not about academic literature)"
         )
-        return self.llm.generate_structured(prompt, IntentResponse)
+        result = self.llm.generate_structured(prompt, IntentResponse)
+        logger.debug(f"Intent classified as: {result.intent}")
+        return result
 
     def act(self, user_input: str):
-        print(f"\n [{self.name}] received input: {user_input}")
+        logger.info(f"[{self.name}] received input: {user_input}")
         intent_resp = self.classify_intent(user_input)
-        print(f"Intent classified: {intent_resp.intent}")
+        logger.info(f"Intent classified: {intent_resp.intent}")
+        
         if intent_resp.intent == "out-of-scope":
+            logger.debug("Query is out-of-scope, returning early")
             print(" Your query does not appear to be about academic research. Please ask for scientific papers or studies.")
             return {"intent": "out-of-scope", "message": "Please ask for scientific papers or studies."}
 
@@ -36,13 +42,17 @@ class ChatAgent(BaseAgent):
             action_name = "generate_queries"
             llm_prompt = f"Given the user query: '{user_input}', generate structured CombinatorToolParams JSON output."
 
+        logger.debug(f"Generating structured parameters for action: {action_name}")
         tool_params = self.llm.generate_structured(llm_prompt, tool_model)
-        print(f"Structured tool params: {tool_params}")
+        logger.debug(f"Structured tool params: {tool_params}")
 
         if action_name in self.tools:
+            logger.info(f"Executing tool: {action_name}")
             tool_func = self.tools[action_name]
             result = tool_func(**tool_params.dict())
-            print(f"Tool result: {result}")
+            logger.success(f"Tool execution completed: {action_name}")
+            logger.debug(f"Tool result: {result}")
             return result
-        print(f"Unknown action: {action_name}")
+        
+        logger.error(f"Unknown action: {action_name}")
         return None
