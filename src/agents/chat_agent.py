@@ -49,7 +49,7 @@ class ChatAgent(BaseAgent):
         if action_name in self.tools:
             logger.info(f"Executing tool: {action_name}")
             tool_func = self.tools[action_name]
-            result = tool_func(**tool_params.dict())
+            result = tool_func(**tool_params.model_dump(exclude="reasoning"))
             logger.success(f"Tool execution completed: {action_name}")
             logger.debug(f"Tool result: {result}")
             return result
