@@ -3,6 +3,7 @@ from sentence_transformers import SentenceTransformer
 from datasets import load_dataset
 import pandas as pd
 from loguru import logger
+import os
 
 def build_milvus_index():
     logger.info("Connecting to Milvus database")
@@ -10,6 +11,7 @@ def build_milvus_index():
     logger.success("Connected to Milvus database")
 
     collection_name = "ml_arxiv"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     model = SentenceTransformer("all-MiniLM-L6-v2", device=None)  # 'None' -> detect cuda/mps/cpu automatically
 
     # Check if collection already exists
