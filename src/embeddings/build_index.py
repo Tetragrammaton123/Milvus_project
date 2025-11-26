@@ -13,6 +13,21 @@ def build_milvus_index():
     logger.info("Loading ML-ArXiv-Papers dataset")
     dataset = load_dataset("CShorten/ML-ArXiv-Papers")
     df = pd.DataFrame(dataset['train'])[['title', 'abstract']].dropna()
+    
+    # Truncate fields to fit within Milvus schema constraints
+    MAX_TITLE_LENGTH = 512
+    MAX_ABSTRACT_LENGTH = 2048
+    
+    title_truncated = (df['title'].str.len() > MAX_TITLE_LENGTH).sum()
+    abstract_truncated = (df['abstract'].str.len() > MAX_ABSTRACT_LENGTH).sum()
+    
+    if title_truncated > 0:
+        logger.warning(f"Truncating {title_truncated} titles that exceed {MAX_TITLE_LENGTH} characters")
+    if abstract_truncated > 0:
+        logger.warning(f"Truncating {abstract_truncated} abstracts that exceed {MAX_ABSTRACT_LENGTH} characters")
+    
+    df['title'] = df['title'].str[:MAX_TITLE_LENGTH]
+    df['abstract'] = df['abstract'].str[:MAX_ABSTRACT_LENGTH]
     df['text'] = df['title'] + '\n\n' + df['abstract']
     logger.success(f"Dataset loaded with {len(df)} papers")
 
