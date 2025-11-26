@@ -4,6 +4,7 @@ from datasets import load_dataset
 import pandas as pd
 from loguru import logger
 import os
+from tqdm import tqdm
 
 def build_milvus_index():
     logger.info("Connecting to Milvus database")
@@ -45,13 +46,10 @@ def build_milvus_index():
     collection = Collection(collection_name, schema)
     logger.info(f"Collection '{collection_name}' created")
 
-    logger.info("Inserting documents into collection")
     batch_size = 1000
-    for i in range(0, len(df), batch_size):
+    for i in tqdm(range(0, len(df), batch_size), desc="Inserting documents", unit="batch"):
         end = min(i + batch_size, len(df))
         collection.insert([df['title'].iloc[i:end].tolist(), embeddings[i:end]])
-        logger.debug(f"Inserted batch {i//batch_size + 1}/{(len(df)-1)//batch_size + 1}")
-    logger.success(f"All {len(df)} documents inserted")
 
     logger.info("Creating vector index")
     index_params = {"index_type": "IVF_FLAT", "metric_type": "COSINE", "params": {"nlist": 128}}
