@@ -1,6 +1,7 @@
-from .base import BaseAgent, SearchToolParams, CombinatorToolParams
+from .base import BaseAgent
 from pydantic import BaseModel
 from typing import List
+from loguru import logger
 
 
 class CombinatorResponse(BaseModel):
@@ -9,12 +10,18 @@ class CombinatorResponse(BaseModel):
 
 class CombinatorAgent(BaseAgent):
     def generate_queries(self, concept: str, n: int = 3) -> CombinatorResponse:
+        logger.info(f"[{self.name}] Generating {n} queries for concept: {concept}")
         prompt = (
             f"Generate {n} diverse, concise search queries for an academic search engine "
             f"covering the concept: {concept}."
         )
         try:
-            return self.llm.generate_structured(prompt, CombinatorResponse)
+            result = self.llm.generate_structured(prompt, CombinatorResponse)
+            logger.success(f"Generated {len(result.queries)} queries: {result.queries}")
+            return result
         except Exception:
+            logger.exception("Failed to generate queries via LLM. Falling back to default queries")
             parts = [concept, concept + " research", concept + " review"]
-            return CombinatorResponse(queries=parts[:n])
+            fallback = CombinatorResponse(queries=parts[:n])
+            logger.debug(f"Using fallback queries: {fallback.queries}")
+            return fallback

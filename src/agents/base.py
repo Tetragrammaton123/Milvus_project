@@ -2,7 +2,8 @@ import re
 from typing import Any, Type, TypeVar, Optional
 from pydantic import BaseModel
 from openai import OpenAI
-from pydantic import BaseModel, Field
+from pydantic import Field
+from loguru import logger
 
 class SearchToolParams(BaseModel):
     reasoning: str = Field(description="Preliminary speculations on how to generate proper search query")
@@ -23,8 +24,10 @@ class OpenAILLM:
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
         self.base_system = "You are a reasoning agent. Always respond in JSON when asked."
+        logger.debug(f"OpenAILLM initialized with model: {model}")
 
     def generate_structured(self, prompt: str, response_model: Type[T]) -> Optional[T]:
+        logger.debug(f"Generating structured response for model: {response_model.__name__}")
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -44,7 +47,9 @@ class OpenAILLM:
             if hasattr(completion.choices[0].message, "parsed")
             else completion.choices[0].message.content
         )
-        return response_model.model_validate_json(content)
+        result = response_model.model_validate_json(content)
+        logger.debug(f"Successfully generated structured response: {response_model.__name__}")
+        return result
 
 
 class BaseAgent(BaseModel):
@@ -56,4 +61,5 @@ class BaseAgent(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     def add_tool(self, name: str, func: Any):
+        logger.debug(f"Adding tool '{name}' to agent '{self.name}'")
         self.tools[name] = func
