@@ -5,6 +5,7 @@ import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 import os
+from tqdm import tqdm
 
 def build_milvus_index():
     logger.info("Connecting to Milvus database")
