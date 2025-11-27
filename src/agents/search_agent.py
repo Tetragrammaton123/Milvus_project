@@ -37,13 +37,14 @@ class SearchAgent(BaseAgent):
             anns_field="embedding",
             param={"metric_type": "COSINE", "params": {"nprobe": 10}},
             limit=limit,
-            output_fields=["title"],
+            output_fields=["title", "abstract"],
         )
 
         hits = []
         for hit in results[0]:
             hits.append({
                 "title": hit.entity.get("title"),
+                "abstract": hit.entity.get("abstract"),
                 "score": float(hit.distance)
             })
 
