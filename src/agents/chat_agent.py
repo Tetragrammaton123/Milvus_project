@@ -2,6 +2,9 @@ from .base import BaseAgent, SearchToolParams, CombinatorToolParams
 from pydantic import BaseModel
 from typing import Literal, Optional
 from loguru import logger
+from typing import Any
+from uuid import UUID
+from src.tool_suggest_intents import INTENT_TOOL_IDS
 
 
 class IntentResponse(BaseModel):
@@ -9,6 +12,7 @@ class IntentResponse(BaseModel):
 
 
 class ChatAgent(BaseAgent):
+    ts_client: Any = None
     def _format_history_context(self, conversation_history: list[dict]) -> str:
         """Format conversation history into a context string for the LLM."""
         if not conversation_history:
@@ -28,19 +32,62 @@ class ChatAgent(BaseAgent):
         
         return "\n".join(context_parts)
 
-    def classify_intent(self, query: str, conversation_history: Optional[list[dict]] = None) -> IntentResponse:
+    async def classify_intent(
+        self,
+        query: str,
+        conversation_history: Optional[list[dict]] = None,
+        *,
+        parent_sample_id=None,
+    ) -> IntentResponse:
         logger.debug(f"Classifying intent for query: {query}")
-        
-        # Build prompt with optional conversation context
+
+        ts_messages = None
+        if self.ts_client is not None:
+            try:
+                ts_messages = self._to_ts_messages(query, conversation_history)
+            except Exception:
+                logger.exception("Failed to build ToolSuggest context messages")
+                ts_messages = None
+
+        # 1) Если ToolSuggest обучен — берём top-1 suggestion как интент
+        if self.ts_client is not None and ts_messages is not None and self.ts_client.is_trained:
+            try:
+                suggestions = await self.ts_client.suggest(ts_messages, top_k=1)
+                if suggestions:
+                    sid = suggestions[0].id
+                    if sid == INTENT_TOOL_IDS["find_one"]:
+                        intent = "find_one"
+                    elif sid == INTENT_TOOL_IDS["build_set"]:
+                        intent = "build_set"
+                    else:
+                        intent = "out-of-scope"
+
+                    result = IntentResponse(intent=intent)
+
+                    # record (продолжаем собирать данные даже после обучения)
+                    try:
+                        await self.ts_client.record(
+                            context=ts_messages,
+                            selected_tools=[INTENT_TOOL_IDS[intent]],
+                            parent_context=parent_sample_id,
+                            wait=False,
+                        )
+                    except Exception:
+                        logger.exception("ToolSuggest record failed")
+
+                    return result
+            except Exception:
+                logger.exception("ToolSuggest suggest failed, falling back to LLM")
+
+        # 2) Fallback: текущая LLM-классификация (твоя логика как была)
         prompt_parts = []
-        
         if conversation_history:
             history_context = self._format_history_context(conversation_history)
             if history_context:
                 prompt_parts.append("Previous conversation context:")
                 prompt_parts.append(history_context)
-                prompt_parts.append("")  # Empty line for separation
-        
+                prompt_parts.append("")
+
         prompt_parts.extend([
             "Classify the intent of the user's query in the context of academic literature search.",
             "",
@@ -51,23 +98,37 @@ class ChatAgent(BaseAgent):
             "- build_set (create a set or collection of academic papers)",
             "- out-of-scope (query is not about academic literature)"
         ])
-        
+
         prompt = "\n".join(prompt_parts)
         result = self.llm.generate_structured(prompt, IntentResponse)
+
+        # 3) COLLECTION: записываем (context -> intent) в ToolSuggest
+        if self.ts_client is not None and ts_messages is not None:
+            try:
+                await self.ts_client.record(
+                    context=ts_messages,
+                    selected_tools=[INTENT_TOOL_IDS[result.intent]],
+                    parent_context=parent_sample_id,
+                    wait=False,
+                )
+            except Exception:
+                logger.exception("ToolSuggest record failed")
+
         logger.debug(f"Intent classified as: {result.intent}")
         return result
-
-    def act(self, user_input: str, conversation_history: Optional[list[dict]] = None):
+    
+    async def act(self, user_input: str, conversation_history: Optional[list[dict]] = None, *, parent_sample_id=None):
         logger.info(f"[{self.name}] received input: {user_input}")
-        
-        # Pass history to intent classification
-        intent_resp = self.classify_intent(user_input, conversation_history)
+
+        intent_resp = await self.classify_intent(user_input, conversation_history, parent_sample_id=parent_sample_id)
         logger.info(f"Intent classified: {intent_resp.intent}")
-        
+
         if intent_resp.intent == "out-of-scope":
-            logger.debug("Query is out-of-scope, returning early")
-            print(" Your query does not appear to be about academic research. Please ask for scientific papers or studies.")
             return {"intent": "out-of-scope", "message": "Please ask for scientific papers or studies."}
+
+        ...
+        # остальное оставь как есть (там синхронные вызовы LLM и tool_func)
+
 
         # Build prompt with conversation context
         prompt_parts = []
@@ -102,3 +163,16 @@ class ChatAgent(BaseAgent):
         
         logger.error(f"Unknown action: {action_name}")
         return None
+    def _to_ts_messages(self, query: str, conversation_history: Optional[list[dict]] = None):
+        from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
+        msgs = []
+        if conversation_history:
+            for ex in conversation_history[-3:]:
+                if ex.get("user"):
+                    msgs.append(ModelRequest(parts=[UserPromptPart(content=ex["user"])]))
+                if ex.get("assistant"):
+                    msgs.append(ModelResponse(parts=[TextPart(content=ex["assistant"])]))
+
+        msgs.append(ModelRequest(parts=[UserPromptPart(content=query)]))
+        return msgs
+

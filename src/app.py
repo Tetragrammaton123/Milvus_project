@@ -1,4 +1,7 @@
 import chainlit as cl
+from tool_suggest import ToolSuggestClient, ToolSuggestConfig, LocalBackendConfig
+from tool_suggest.storage import SQLiteRepository
+from src.tool_suggest_intents import INTENT_TOOL_IDS, build_intent_tools
 from src.embeddings.build_index import build_milvus_index
 from src.agents.base import OpenAILLM
 from src.agents.search_agent import SearchAgent
@@ -51,7 +54,40 @@ async def start():
         role="orchestrator",
         llm=llm
     )
-    
+        # ---- ToolSuggest init (Local mode) ----
+    ts_client = ToolSuggestClient(
+        ToolSuggestConfig(
+            collection_name="milvus_intents",
+            local_backend=LocalBackendConfig(
+                repository=SQLiteRepository("./data/tool_suggest.db"),
+                # embedder/classifier можно подключить позже, сначала собираем данные
+            )
+        )
+    )
+
+    # Попытка убедиться, что toolset существует
+    # (если библиотека уже умеет хранить tools в репозитории/коллекции)
+    try:
+        toolset = await ts_client.get_toolset()
+    except Exception as e:
+        logger.exception(f"ToolSuggest get_toolset failed: {e}")
+        toolset = []
+
+    # Если toolset пустой, попробуем найти в ToolSuggestConfig поле для toolset
+    # (в некоторых версиях оно может называться tools/toolset)
+    if not toolset:
+        logger.warning("ToolSuggest toolset is empty. "
+                       "If your tool_suggest version requires toolset registration, "
+                       "configure it according to its docs. Running in LLM-only fallback for now.")
+    else:
+        logger.info(f"ToolSuggest toolset loaded: {[t.name for t in toolset]}")
+
+    # Прокидываем client в ChatAgent (см. патч ниже)
+    chat_agent.ts_client = ts_client
+
+    cl.user_session.set("ts_client", ts_client)
+    cl.user_session.set("ts_parent_sample_id", None)
+
     # Register tools with chat agent
     logger.debug("Registering tools with chat agent")
     chat_agent.add_tool("classify_intent", chat_agent.classify_intent)
@@ -84,7 +120,12 @@ async def main(message: cl.Message):
     
     try:
         # Get result from chat agent with conversation history
-        result = chat_agent.act(message.content, conversation_history=conversation_history)
+        ts_parent = cl.user_session.get("ts_parent_sample_id")
+        result = await chat_agent.act(
+            message.content,
+            conversation_history=conversation_history,
+            parent_sample_id=ts_parent,
+        )
         
         # Handle out-of-scope queries
         if result.get("intent") == "out-of-scope":
